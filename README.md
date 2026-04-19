@@ -79,6 +79,14 @@ securityscan/
 
 ---
 
+## Support the Project
+
+Se gostas do TSS e queres apoiar o desenvolvimento, podes convidar-me a um café! ☕
+
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ajcppt)
+
+---
+
 ## License
 
 This project is licensed under the **GNU General Public License v3.0** — see the [LICENSE](LICENSE) file for details.
