@@ -81,7 +81,7 @@ securityscan/
 
 ## Support the Project
 
-Se gostas do TSS e queres apoiar o desenvolvimento, podes convidar-me a um café! ☕
+If you like TSS and want to support its development, you can buy me a coffee!☕
 
 [![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ajcppt)
 
