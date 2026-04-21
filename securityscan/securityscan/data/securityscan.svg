@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a6b2f;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#145a27;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0d3d1a;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="redStripe" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#c8102e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#9e0c24;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="shieldEdge" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:0.4" />
+      <stop offset="100%" style="stop-color:#1a6b2f;stop-opacity:0" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <clipPath id="shieldClip">
+      <path d="M256 32 L440 100 L440 260 C440 360 256 480 256 480 C256 480 72 360 72 260 L72 100 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Shield base -->
+  <path d="M256 32 L440 100 L440 260 C440 360 256 480 256 480 C256 480 72 360 72 260 L72 100 Z"
+        fill="url(#shieldGrad)"
+        filter="url(#shadow)"/>
+
+  <!-- Portuguese flag green section (left) -->
+  <rect x="72" y="32" width="120" height="448" fill="#1a6b2f" clip-path="url(#shieldClip)"/>
+
+  <!-- Portuguese flag red section (right) -->
+  <rect x="192" y="32" width="248" height="448" fill="url(#redStripe)" clip-path="url(#shieldClip)"/>
+
+  <!-- Shield highlight overlay -->
+  <path d="M256 32 L440 100 L440 260 C440 360 256 480 256 480 C256 480 72 360 72 260 L72 100 Z"
+        fill="url(#shieldEdge)" opacity="0.3"/>
+
+  <!-- Shield border -->
+  <path d="M256 32 L440 100 L440 260 C440 360 256 480 256 480 C256 480 72 360 72 260 L72 100 Z"
+        fill="none"
+        stroke="#4CAF50"
+        stroke-width="6"
+        opacity="0.7"/>
+
+  <!-- Central circle (quinas inspired) -->
+  <circle cx="256" cy="240" r="80" fill="#f5c842" opacity="0.95" filter="url(#glow)"/>
+  <circle cx="256" cy="240" r="74" fill="none" stroke="#c8a000" stroke-width="4"/>
+
+  <!-- Lock icon inside circle -->
+  <rect x="226" y="240" width="60" height="48" rx="6" fill="#1a1a2e"/>
+  <path d="M236 240 L236 224 C236 207 276 207 276 224 L276 240"
+        fill="none" stroke="#1a1a2e" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="256" cy="264" r="8" fill="#f5c842"/>
+  <rect x="253" y="264" width="6" height="12" rx="3" fill="#f5c842"/>
+
+  <!-- TSS text -->
+  <text x="256" y="440"
+        font-family="Georgia, serif"
+        font-size="52"
+        font-weight="bold"
+        fill="#ffffff"
+        text-anchor="middle"
+        opacity="0.95"
+        filter="url(#glow)">TSS</text>
+
+  <!-- Subtle scan lines effect -->
+  <line x1="72" y1="180" x2="440" y2="180" stroke="#4CAF50" stroke-width="1" opacity="0.15" clip-path="url(#shieldClip)"/>
+  <line x1="72" y1="200" x2="440" y2="200" stroke="#4CAF50" stroke-width="1" opacity="0.15" clip-path="url(#shieldClip)"/>
+  <line x1="72" y1="300" x2="440" y2="300" stroke="#4CAF50" stroke-width="1" opacity="0.15" clip-path="url(#shieldClip)"/>
+  <line x1="72" y1="320" x2="440" y2="320" stroke="#4CAF50" stroke-width="1" opacity="0.15" clip-path="url(#shieldClip)"/>
+</svg>
