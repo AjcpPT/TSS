@@ -11,11 +11,10 @@ from gi.repository import Gtk, Adw, Gio, GLib
 from securityscan.ui.i18n import _, Translator
 from securityscan.core.settings import app_settings
 
-# Importa a aba real do ClamAV que acabámos de criar
-from securityscan.ui.tabs.clamav_tab import ClamAVTab
-# Importa as abas
+# Importa as abas reais
 from securityscan.ui.tabs.clamav_tab import ClamAVTab
 from securityscan.ui.tabs.rootkit_tab import RootkitTab
+from securityscan.ui.tabs.tab_full import FullScanTab
 
 class TSSWindow(Adw.ApplicationWindow):
     def __init__(self, **kwargs):
@@ -24,17 +23,27 @@ class TSSWindow(Adw.ApplicationWindow):
         self.set_title(_("app_title"))
         self.set_default_size(900, 600)
         
+        # Tenta carregar o logótipo caso exista
         self.logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "tss_logo.png"))
         
+        # Container Principal
         self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.set_content(self.main_box)
 
+        # 1. Configurar Ações (para o menu funcionar)
         self._setup_actions()
+        
+        # 2. Criar a Barra de Menus Clássica
         self._create_menu_bar()
+
+        # 3. Criar as Abas (Stack)
         self._create_tabs()
+
+        # 4. Verificar Dependências ao arrancar
         GLib.idle_add(self._check_dependencies)
 
     def _setup_actions(self):
+        """Regista os atalhos e ações do menu."""
         actions =[
             ("about", self.on_about_action),
             ("lang_pt", lambda a, p: self.change_language("PT")),
@@ -50,7 +59,9 @@ class TSSWindow(Adw.ApplicationWindow):
             self.add_action(action)
 
     def _create_menu_bar(self):
+        """Cria a barra de ferramentas de topo."""
         menu = Gio.Menu()
+
         file_menu = Gio.Menu()
         file_menu.append(_("menu_quit"), "app.quit")
         menu.append_submenu(_("menu_file"), file_menu)
@@ -76,7 +87,7 @@ class TSSWindow(Adw.ApplicationWindow):
         menubar = Gtk.PopoverMenuBar.new_from_model(menu)
         self.main_box.append(menubar)
 
-def _create_tabs(self):
+    def _create_tabs(self):
         """Cria o sistema de abas."""
         self.stack = Adw.ViewStack()
         self.stack.set_vexpand(True)
@@ -91,12 +102,15 @@ def _create_tabs(self):
         clamav_page = self.stack.add_titled(ClamAVTab(), "clamav", _("tab_clamav"))
         clamav_page.set_icon_name("security-high-symbolic")
 
-        # 2. ABA DO ROOTKIT (NOVA)
+        # 2. ABA DO ROOTKIT
         rootkit_page = self.stack.add_titled(RootkitTab(), "rootkit", _("tab_rootkit"))
         rootkit_page.set_icon_name("find-location-symbolic")
 
-        # As outras continuam placeholders até às próximas etapas
-        self._add_placeholder_page("full", _("tab_full"), "system-search-symbolic")
+        # 3. ABA DO FULL SCAN (A VERDADEIRA!)
+        full_page = self.stack.add_titled(FullScanTab(), "full", _("tab_full"))
+        full_page.set_icon_name("system-search-symbolic")
+
+        # Placeholders para as restantes abas
         self._add_placeholder_page("quarantine", _("tab_quarantine"), "user-trash-symbolic")
         self._add_placeholder_page("monitor", _("tab_monitor"), "network-transmit-receive-symbolic")
         self._add_placeholder_page("logs", _("tab_logs"), "text-x-generic-symbolic")
@@ -111,6 +125,7 @@ def _create_tabs(self):
         page.set_icon_name(icon_name)
 
     def on_about_action(self, action, param):
+        """Mostra a janela Sobre com os créditos do autor e links."""
         about = Adw.AboutWindow(transient_for=self)
         about.set_application_name(_("app_title"))
         about.set_version("1.0.0")
@@ -119,13 +134,22 @@ def _create_tabs(self):
         about.set_website("https://github.com/AjcpPT/TSS")
         about.set_issue_url("https://github.com/AjcpPT/TSS/issues")
         about.set_support_url("https://ko-fi.com/ajcppt") 
+        
         about.add_credit_section("Desenvolvimento Backend & Frontend",["Arlindo Pereira", "AI Assistant"])
-        if os.path.exists(self.logo_path): about.set_application_icon(self.logo_path)
+        
+        if os.path.exists(self.logo_path):
+            about.set_application_icon(self.logo_path)
+            
         about.present()
 
     def change_language(self, lang_code):
+        """Muda o idioma e pede reinício."""
         app_settings.set("language", lang_code)
-        dialog = Adw.MessageDialog(transient_for=self, heading="Idioma / Language", body="Reinicie a aplicação para aplicar as alterações.")
+        dialog = Adw.MessageDialog(
+            transient_for=self, 
+            heading="Idioma / Language", 
+            body="Reinicie a aplicação para aplicar as alterações. / Please restart the application to apply changes."
+        )
         dialog.add_response("ok", "OK")
         dialog.present()
 
@@ -138,6 +162,7 @@ def _create_tabs(self):
         return False
 
     def _check_dependencies(self):
+        """Verifica se ClamAV e chkrootkit/rkhunter estão instalados."""
         missing =[]
         if not self._is_tool_installed("clamscan"): missing.append("clamav")
         if not self._is_tool_installed("rkhunter"): missing.append("rkhunter")
@@ -152,30 +177,53 @@ def _create_tabs(self):
             dialog.add_response("ignore", _("btn_ignore"))
             dialog.add_response("install", _("btn_install"))
             dialog.set_response_appearance("install", Adw.ResponseAppearance.SUGGESTED)
+            
             def on_response(dlg, response):
-                if response == "install": self._install_dependencies(missing)
+                if response == "install":
+                    self._install_dependencies(missing)
             dialog.connect("response", on_response)
             dialog.present()
 
     def _install_dependencies(self, missing_pkgs):
-        self.waiting_dialog = Adw.MessageDialog(transient_for=self, heading=_("missing_deps_title"), body=_("installing_msg"))
+        """Instala dependências no fundo e avisa o utilizador quando terminar."""
+        self.waiting_dialog = Adw.MessageDialog(
+            transient_for=self, 
+            heading=_("missing_deps_title"), 
+            body=_("installing_msg")
+        )
         self.waiting_dialog.present()
+
         def install_worker():
             cmd =["pkexec", "apt-get", "install", "-y"] + missing_pkgs
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True)
-                if result.returncode == 0: GLib.idle_add(self._on_install_finished, True, "")
-                else: GLib.idle_add(self._on_install_finished, False, result.stderr)
+                if result.returncode == 0:
+                    GLib.idle_add(self._on_install_finished, True, "")
+                else:
+                    GLib.idle_add(self._on_install_finished, False, result.stderr)
             except Exception as e:
                 GLib.idle_add(self._on_install_finished, False, str(e))
+
         thread = threading.Thread(target=install_worker, daemon=True)
         thread.start()
 
     def _on_install_finished(self, success, error_msg):
-        if hasattr(self, 'waiting_dialog') and self.waiting_dialog: self.waiting_dialog.close()
+        """Executado quando a Thread de instalação termina."""
+        if hasattr(self, 'waiting_dialog') and self.waiting_dialog:
+            self.waiting_dialog.close()
+            
         if success:
-            dialog = Adw.MessageDialog(transient_for=self, heading=_("install_success_title"), body=_("install_success_msg"))
+            dialog = Adw.MessageDialog(
+                transient_for=self, 
+                heading=_("install_success_title"), 
+                body=_("install_success_msg")
+            )
         else:
-            dialog = Adw.MessageDialog(transient_for=self, heading=_("install_error_title"), body=_("install_error_msg") + f"\n\nErro:\n{error_msg}")
+            dialog = Adw.MessageDialog(
+                transient_for=self, 
+                heading=_("install_error_title"), 
+                body=_("install_error_msg") + f"\n\nDetalhes do Erro:\n{error_msg}"
+            )
+            
         dialog.add_response("ok", "OK")
         dialog.present()

@@ -2,7 +2,6 @@ import gi
 gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib
 
-# Importamos o motor de backend
 from securityscan.core.scanner_rootkit import scanner_rootkit
 from securityscan.ui.i18n import _
 
@@ -53,7 +52,6 @@ class RootkitTab(Gtk.Box):
         options_box.set_margin_start(15)
         options_box.set_margin_end(15)
 
-        # Opção: mostrar output detalhado
         verbose_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         verbose_box.append(Gtk.Label(label="Output detalhado (verbose)"))
         self.verbose_switch = Gtk.Switch()
@@ -63,7 +61,6 @@ class RootkitTab(Gtk.Box):
         verbose_box.append(self.verbose_switch)
         options_box.append(verbose_box)
 
-        # Opção: skip checks lentos
         skip_slow_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         skip_slow_box.append(Gtk.Label(label="Saltar verificações lentas"))
         self.skip_slow_switch = Gtk.Switch()
@@ -80,7 +77,7 @@ class RootkitTab(Gtk.Box):
         warn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         warn_box.set_halign(Gtk.Align.CENTER)
         warn_icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
-        warn_label = Gtk.Label(label="Requer privilégios de administrador (root)")
+        warn_label = Gtk.Label(label="Requer privilégios de administrador — será pedida a password")
         warn_label.add_css_class("dim-label")
         warn_box.append(warn_icon)
         warn_box.append(warn_label)
@@ -111,7 +108,7 @@ class RootkitTab(Gtk.Box):
         self.progress_bar.set_fraction(0.0)
         self.append(self.progress_bar)
 
-        # --- LOG / CAIXA DE TEXTO (estilo terminal) ---
+        # --- LOG ESTILO TERMINAL ---
         scroll = Gtk.ScrolledWindow()
         scroll.set_vexpand(True)
         self.textview = Gtk.TextView()
@@ -122,25 +119,26 @@ class RootkitTab(Gtk.Box):
         scroll.set_child(self.textview)
         self.append(scroll)
 
-        # --- BOTÃO GUARDAR LOG ---
-        save_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        # --- BOTÃO GUARDAR LOG (ícone + texto visível) ---
+        save_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         save_box.set_halign(Gtk.Align.END)
-        btn_save = Gtk.Button(label="Guardar Log")
-        btn_save.set_icon_name("document-save-symbolic")
+        save_box.set_margin_top(5)
+
+        btn_save = Gtk.Button()
+        btn_save_inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        btn_save_inner.append(Gtk.Image.new_from_icon_name("document-save-symbolic"))
+        btn_save_inner.append(Gtk.Label(label="Guardar Log"))
+        btn_save.set_child(btn_save_inner)
         btn_save.connect("clicked", self.on_save_log_clicked)
         save_box.append(btn_save)
         self.append(save_box)
 
-    # ------------------------------------------------------------------ #
-
     def log_message(self, msg):
-        """Adiciona uma linha ao log visível."""
         end_iter = self.textbuffer.get_end_iter()
         self.textbuffer.insert(end_iter, msg + "\n")
         self.textview.scroll_to_mark(self.textbuffer.get_insert(), 0.0, True, 0.0, 1.0)
 
     def _get_selected_tool(self):
-        """Devolve a ferramenta selecionada como string."""
         idx = self.tool_dropdown.get_selected()
         return ["both", "rkhunter", "chkrootkit"][idx]
 
@@ -154,8 +152,9 @@ class RootkitTab(Gtk.Box):
         verbose = self.verbose_switch.get_active()
         skip_slow = self.skip_slow_switch.get_active()
 
-        self.status_label.set_text("Scan de rootkits em curso...")
+        self.status_label.set_text("A aguardar autenticação...")
         self.log_message(f"--- A iniciar scan de rootkits (ferramenta: {tool}) ---")
+        self.log_message("-> Será pedida a password de administrador numa janela separada.")
         if verbose:
             self.log_message("-> Modo verbose ativado.")
         if skip_slow:
@@ -202,27 +201,23 @@ class RootkitTab(Gtk.Box):
         if status == "completed":
             threats = summary_dict.get("threats", 0)
             warnings = summary_dict.get("warnings", 0)
-            self.status_label.set_text(
-                f"Concluído! {threats} ameaça(s) encontrada(s), {warnings} aviso(s)."
-            )
-            self.log_message(
-                f"\n--- SCAN CONCLUÍDO ---\n"
-                f"Ameaças: {threats}\n"
-                f"Avisos: {warnings}"
-            )
+            self.status_label.set_text(f"Concluído! {threats} ameaça(s), {warnings} aviso(s).")
+            self.log_message(f"\n--- SCAN CONCLUÍDO ---\nAmeaças: {threats}\nAvisos: {warnings}")
         elif status == "cancelled":
             self.status_label.set_text("Cancelado pelo utilizador.")
             self.log_message("\n--- SCAN CANCELADO ---")
         elif status == "no_root":
-            self.status_label.set_text("Erro: privilégios de root necessários.")
-            self.log_message("\nERRO: Execute a aplicação com privilégios de administrador.")
+            self.status_label.set_text("Autenticação cancelada ou insuficiente.")
+            self.log_message(
+                "\nERRO: A password não foi introduzida ou foi cancelada.\n"
+                "Tente novamente e introduza a password de administrador quando solicitado."
+            )
         else:
             self.status_label.set_text("Erro no scan.")
             self.log_message(f"\nERRO: {summary_dict.get('message', 'Erro desconhecido')}")
         return False
 
     def on_save_log_clicked(self, btn):
-        """Guarda o conteúdo do log num ficheiro de texto."""
         dialog = Gtk.FileChooserNative.new(
             title="Guardar Log do Rootkit",
             parent=self.get_root(),

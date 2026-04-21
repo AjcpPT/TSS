@@ -4,13 +4,13 @@ import threading
 import logging
 import shutil
 
-# Integração com os módulos já criados
 from securityscan.core.logger import app_logger
+
 
 class RootkitScanner:
     """
-    Controlador para scan de rootkits utilizando 'rkhunter' e/se 'chkrootkit'.
-    Executa os scans em background e emite callbacks para a interface gráfica.
+    Controlador para scan de rootkits utilizando rkhunter e/ou chkrootkit.
+    Usa pkexec para pedir password graficamente.
     """
 
     def __init__(self):
@@ -18,149 +18,295 @@ class RootkitScanner:
         self._is_running = False
 
     def check_dependencies(self) -> dict:
-        """Verifica quais os scanners de rootkit instalados."""
-        return {
-            "rkhunter": shutil.which("rkhunter") is not None,
-            "chkrootkit": shutil.which("chkrootkit") is not None
-        }
+        """Verifica quais os scanners instalados, incluindo pastas de root."""
+        deps = {"rkhunter": False, "chkrootkit": False}
+        search_paths = ['/usr/sbin', '/sbin', '/usr/bin', '/bin', '/usr/local/sbin']
+        for tool in ["rkhunter", "chkrootkit"]:
+            if shutil.which(tool):
+                deps[tool] = True
+            else:
+                for p in search_paths:
+                    if os.path.exists(f"{p}/{tool}"):
+                        deps[tool] = True
+                        break
+        return deps
 
     def stop_scan(self):
-        """Interrompe o scan de rootkits em execução."""
+        """Interrompe o scan em execução."""
         if self._is_running and self._process:
             self._process.terminate()
             self._is_running = False
-            app_logger.log("rootkit", "Scan de rootkits interrompido pelo utilizador.", logging.WARNING)
+            app_logger.log("rootkit", "Scan interrompido pelo utilizador.", logging.WARNING)
 
-    def scan(self, on_progress=None, on_warning=None, on_finished=None) -> bool:
+    def scan(self, tool="both", verbose=False, skip_slow=False,
+             on_progress=None, on_threat=None, on_finished=None) -> bool:
         """
-        Inicia o scan em background.
-        :param on_progress: Callback f(message) a cada item verificado.
-        :param on_warning: Callback f(source, warning_msg) quando deteta algo suspeito.
-        :param on_finished: Callback f(summary_dict) no final.
+        Inicia o scan em background com pkexec.
+        :param tool: "both", "rkhunter" ou "chkrootkit"
+        :param verbose: output detalhado
+        :param skip_slow: saltar verificações lentas
+        :param on_progress: Callback f(message)
+        :param on_threat: Callback f(threat_description)
+        :param on_finished: Callback f(summary_dict)
         """
         deps = self.check_dependencies()
+
         if not deps["rkhunter"] and not deps["chkrootkit"]:
-            msg = "Nem o rkhunter nem o chkrootkit estão instalados no sistema."
+            msg = "Nem o rkhunter nem o chkrootkit estão instalados."
             app_logger.log("rootkit", msg, logging.ERROR)
             if on_finished:
                 on_finished({"status": "error", "message": msg})
             return False
 
         if self._is_running:
-            app_logger.log("rootkit", "Já existe um scan de rootkit em execução.", logging.WARNING)
+            app_logger.log("rootkit", "Já existe um scan em execução.", logging.WARNING)
             return False
 
-        # Inicia a thread
         thread = threading.Thread(
             target=self._run_scan,
-            args=(deps, on_progress, on_warning, on_finished),
+            args=(deps, tool, verbose, skip_slow, on_progress, on_threat, on_finished),
             daemon=True
         )
         thread.start()
         return True
 
-    def _run_scan(self, deps, on_progress, on_warning, on_finished):
-        """Lógica central: corre rkhunter e chkrootkit de forma sequencial."""
+    def _run_scan(self, deps, tool, verbose, skip_slow, on_progress, on_threat, on_finished):
+        """Lógica central do scan."""
         self._is_running = True
-        summary = {"scanned_items": 0, "warnings": 0, "warning_details":[]}
+        summary = {"threats": 0, "warnings": 0, "details": []}
 
-        app_logger.log("rootkit", "Início do scan de Rootkits.")
-
-        # Verifica permissões (Root é ideal para estes scans)
-        if os.geteuid() != 0:
-            msg_priv = "O scan está a ser executado sem privilégios de ROOT. Alguns resultados podem estar ocultos ou gerar falsos positivos."
-            app_logger.log("rootkit", msg_priv, logging.WARNING)
-            if on_warning:
-                on_warning("Permissões", msg_priv)
+        app_logger.log("rootkit", "Início do scan de rootkits.")
 
         try:
-            # 1. Executa RKHUNTER
-            if deps["rkhunter"] and self._is_running:
-                self._run_rkhunter(summary, on_progress, on_warning)
+            run_rkhunter = tool in ("both", "rkhunter") and deps["rkhunter"]
+            run_chkrootkit = tool in ("both", "chkrootkit") and deps["chkrootkit"]
 
-            # 2. Executa CHKROOTKIT
-            if deps["chkrootkit"] and self._is_running:
-                self._run_chkrootkit(summary, on_progress, on_warning)
+            if run_rkhunter and self._is_running:
+                self._run_rkhunter(summary, verbose, skip_slow, on_progress, on_threat)
 
+            if run_chkrootkit and self._is_running:
+                self._run_chkrootkit(summary, on_progress, on_threat)
+
+        except PermissionError as e:
+            self._is_running = False
+            app_logger.log("rootkit", f"Erro de permissões: {e}", logging.ERROR)
+            if on_finished:
+                on_finished({"status": "no_root", "message": str(e)})
+            return
         except Exception as e:
-            app_logger.log("rootkit", f"Erro crítico durante o scan de rootkits: {e}", logging.ERROR)
+            app_logger.log("rootkit", f"Erro crítico: {e}", logging.ERROR)
             self._is_running = False
             if on_finished:
                 on_finished({"status": "error", "message": str(e)})
             return
 
+        was_cancelled = not self._is_running
         self._is_running = False
 
-        # Se não foi interrompido a meio
-        if self._process and self._process.returncode is not None and self._process.returncode < 0:
+        if was_cancelled:
             if on_finished:
-                on_finished({"status": "cancelled", "summary": summary})
+                on_finished({"status": "cancelled"})
         else:
-            app_logger.log("rootkit", f"Scan de rootkits concluído. Alertas encontrados: {summary['warnings']}")
+            app_logger.log("rootkit", f"Scan concluído. Ameaças: {summary['threats']}, Avisos: {summary['warnings']}")
             if on_finished:
-                on_finished({"status": "completed", "summary": summary})
+                on_finished({
+                    "status": "completed",
+                    "threats": summary["threats"],
+                    "warnings": summary["warnings"],
+                    "details": summary["details"]
+                })
 
-    def _run_rkhunter(self, summary, on_progress, on_warning):
-        """Sub-processo dedicado ao rkhunter."""
-        app_logger.log("rootkit", "A iniciar rkhunter...")
-        
-        # Parâmetros: check (scan), skip-keypress (não pausar), nocolors (facilita parsing)
-        cmd =["rkhunter", "--check", "--skip-keypress", "--nocolors"]
-        
-        self._process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
-        )
+    def _check_pkexec(self):
+        """Verifica se pkexec está disponível."""
+        if not shutil.which("pkexec"):
+            raise Exception(
+                "pkexec não encontrado.\n"
+                "Instale com: sudo apt install policykit-1"
+            )
 
-        for line in self._process.stdout:
-            line = line.strip()
-            if not line:
-                continue
+    def _is_real_threat(self, line: str) -> bool:
+        """
+        Determina se uma linha do rkhunter é uma ameaça real.
+        Ignora [ Not found ], [ OK ], [ None found ] e linhas informativas.
+        Só marca como ameaça se tiver [ Infected ] ou [ Warning ].
+        """
+        # Ignorar explicitamente resultados negativos / informativos
+        ignore_markers = [
+            "[ Not found ]",
+            "[ OK ]",
+            "[ None found ]",
+            "[ Found ]",
+            "Rootkit Hunter version",
+            "Rootkits checked :",
+            "Possible rootkits:",
+            "Files checked:",
+            "Suspect files:",
+            "System checks summary",
+            "All results have been written",
+            "The system checks took",
+        ]
+        for marker in ignore_markers:
+            if marker in line:
+                return False
 
-            # Captura de progresso
-            if "Checking" in line:
-                summary["scanned_items"] += 1
-                if on_progress:
-                    # Limpa a linha para enviar para a UI sem as tags de [ OK ]
+        # Só são ameaças reais estas marcações
+        threat_markers = ["[ Warning ]", "[ Infected ]", "Warning:"]
+        for marker in threat_markers:
+            if marker in line:
+                return True
+
+        return False
+
+    def _is_real_threat_chkrootkit(self, line: str) -> bool:
+        """
+        Determina se uma linha do chkrootkit é uma ameaça real.
+        Só marca como ameaça se tiver INFECTED.
+        'not infected' e 'not tested' são ignorados.
+        """
+        line_lower = line.lower()
+        if "not infected" in line_lower:
+            return False
+        if "not tested" in line_lower:
+            return False
+        if "nothing found" in line_lower:
+            return False
+        if "no suspect" in line_lower:
+            return False
+        if "infected" in line_lower or "vulnerable" in line_lower:
+            return True
+        return False
+
+    def _categorize_rkhunter_line(self, line: str) -> str:
+        """
+        Categoriza uma linha do rkhunter:
+        - "threat"   → ameaça real ([ Warning ] ou [ Infected ])
+        - "progress" → linha de progresso normal
+        - "ignore"   → ignorar completamente
+        """
+        ignore_markers = [
+            "[ Not found ]", "[ OK ]", "[ None found ]", "[ Found ]",
+            "Rootkit Hunter version", "Rootkits checked",
+            "Possible rootkits", "Files checked", "Suspect files",
+            "System checks summary", "All results have been written",
+            "The system checks took", "======",
+        ]
+        for marker in ignore_markers:
+            if marker in line:
+                return "ignore"
+
+        if "[ Warning ]" in line or "[ Infected ]" in line or "Warning:" in line:
+            return "threat"
+
+        if "Checking" in line or "Performing" in line:
+            return "progress"
+
+        return "ignore"
+
+    def _run_rkhunter(self, summary, verbose, skip_slow, on_progress, on_threat):
+        """Corre rkhunter via pkexec com filtragem correta de output."""
+        self._check_pkexec()
+        app_logger.log("rootkit", "A iniciar rkhunter via pkexec...")
+
+        cmd = ["pkexec", "rkhunter", "--check", "--skip-keypress", "--nocolors"]
+        if verbose:
+            cmd.append("--verbose-logging")
+        if skip_slow:
+            cmd += ["--disable-tests", "suspscan"]
+
+        try:
+            self._process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+
+            for line in self._process.stdout:
+                if not self._is_running:
+                    self._process.terminate()
+                    break
+
+                line = line.strip()
+                if not line:
+                    continue
+
+                category = self._categorize_rkhunter_line(line)
+
+                if category == "progress":
+                    # Limpa a linha para mostrar só o que interessa
                     clean_msg = line.split("[")[0].strip()
-                    on_progress(f"[rkhunter] {clean_msg}")
+                    if clean_msg:
+                        if on_progress:
+                            on_progress(f"[rkhunter] {clean_msg}")
 
-            # Captura de alertas/infeções
-            if "Warning:" in line or "[ Warning ]" in line:
-                summary["warnings"] += 1
-                summary["warning_details"].append(("rkhunter", line))
-                app_logger.log("rootkit", f"Alerta rkhunter: {line}", logging.WARNING)
-                if on_warning:
-                    on_warning("rkhunter", line)
+                elif category == "threat":
+                    summary["warnings"] += 1
+                    summary["details"].append(("rkhunter", line))
+                    app_logger.log("rootkit", f"Aviso rkhunter: {line}", logging.WARNING)
+                    if on_threat:
+                        on_threat(f"[rkhunter] {line.strip()}")
 
-        self._process.wait()
+                # category == "ignore" → não faz nada
 
-    def _run_chkrootkit(self, summary, on_progress, on_warning):
-        """Sub-processo dedicado ao chkrootkit."""
-        app_logger.log("rootkit", "A iniciar chkrootkit...")
-        cmd = ["chkrootkit"]
-        
-        self._process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
-        )
+            self._process.wait()
 
-        for line in self._process.stdout:
-            line = line.strip()
-            if not line:
-                continue
+            if self._process.returncode == 126:
+                raise PermissionError("Autenticação cancelada pelo utilizador.")
+            elif self._process.returncode == 127:
+                raise PermissionError("Permissões insuficientes para executar o rkhunter.")
 
-            summary["scanned_items"] += 1
-            if on_progress:
-                clean_msg = line.split("...")[0].strip()
-                on_progress(f"[chkrootkit] {clean_msg}")
+        except FileNotFoundError:
+            raise Exception("rkhunter não encontrado no sistema.")
 
-            if "INFECTED" in line or "Vulnerable" in line:
-                summary["warnings"] += 1
-                summary["warning_details"].append(("chkrootkit", line))
-                app_logger.log("rootkit", f"Alerta chkrootkit: {line}", logging.WARNING)
-                if on_warning:
-                    on_warning("chkrootkit", line)
+    def _run_chkrootkit(self, summary, on_progress, on_threat):
+        """Corre chkrootkit via pkexec com filtragem correta de output."""
+        self._check_pkexec()
+        app_logger.log("rootkit", "A iniciar chkrootkit via pkexec...")
 
-        self._process.wait()
+        cmd = ["pkexec", "chkrootkit"]
+
+        try:
+            self._process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+
+            for line in self._process.stdout:
+                if not self._is_running:
+                    self._process.terminate()
+                    break
+
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Mostrar progresso — linha sem resultado ainda
+                if "..." in line and "INFECTED" not in line.upper():
+                    clean_msg = line.split("...")[0].strip()
+                    if clean_msg and on_progress:
+                        on_progress(f"[chkrootkit] {clean_msg}")
+
+                # Só ameaças reais — ignora "not infected"
+                if self._is_real_threat_chkrootkit(line):
+                    summary["threats"] += 1
+                    summary["details"].append(("chkrootkit", line))
+                    app_logger.log("rootkit", f"Ameaça chkrootkit: {line}", logging.ERROR)
+                    if on_threat:
+                        on_threat(f"[chkrootkit] ⚠️ {line}")
+
+            self._process.wait()
+
+            if self._process.returncode == 126:
+                raise PermissionError("Autenticação cancelada pelo utilizador.")
+            elif self._process.returncode == 127:
+                raise PermissionError("Permissões insuficientes para executar o chkrootkit.")
+
+        except FileNotFoundError:
+            raise Exception("chkrootkit não encontrado no sistema.")
 
 
 # Instância global
