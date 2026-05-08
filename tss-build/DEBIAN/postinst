@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+echo "A atualizar bases de dados do ClamAV..."
+freshclam || true
+echo "A configurar rkhunter..."
+rkhunter --propupd || true
+echo "A criar atalho no menu..."
+update-desktop-database /usr/share/applications || true
+echo "Tuga Security Scan instalado com sucesso!"
+echo "Pode iniciar a aplicação pelo menu ou com o comando: tss"

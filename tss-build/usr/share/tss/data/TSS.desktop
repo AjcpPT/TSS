@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Tuga Security Scan
+Comment=Antivirus and Rootkit Scanner (ClamAV, rkhunter, chkrootkit)
+Exec=tss-gui
+Icon=tss-icon
+Type=Application
+Terminal=false
+Categories=Utility;Security;System;
+Keywords=antivirus;security;scan;rootkit;
+StartupNotify=true

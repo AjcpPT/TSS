@@ -1,0 +1,3 @@
+#!/bin/bash
+cd /usr/share/tss
+PYTHONPATH=/usr/share/tss python3 /usr/share/tss/main.py

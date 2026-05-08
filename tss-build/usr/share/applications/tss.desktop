@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Tuga Security Scan
+GenericName=Linux Security Suite
+Comment=Antivirus and Anti-Rootkit GUI for Linux
+Exec=tss
+Icon=/usr/share/tss/data/securityscan.svg
+Terminal=false
+Categories=Security;System;
+Keywords=antivirus;rootkit;clamav;rkhunter;security;
+StartupNotify=true
